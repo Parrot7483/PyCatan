@@ -1,0 +1,4 @@
+__pycache__/
+shell.nix
+TraceLoader/**\game_*.json
+TraceLoader/**\games.json
