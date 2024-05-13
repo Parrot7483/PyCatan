@@ -2,3 +2,6 @@ __pycache__/
 shell.nix
 TraceLoader/**\game_*.json
 TraceLoader/**\games.json
+.DS_Store
+TraceLoader/.DS_Store
+Visualizer/.DS_Store
