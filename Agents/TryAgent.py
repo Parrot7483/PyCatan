@@ -1,4 +1,5 @@
 import random
+import math
 
 from Classes.Constants import MaterialConstants, BuildConstants
 from Classes.Materials import Materials
@@ -17,7 +18,9 @@ class TryAgent(AgentInterface):
     def evaluate_node(self, node_id, board_instance):
         self.board = board_instance
         numbers = [self.board.terrain[v]['probability'] for v in self.board.nodes[node_id]['contacting_terrain']]
+        # print(f"probability of neightbors from node_id {node_id}: {numbers}")
         number_score = 0
+
         #here, for each adjacent terrain, we assign a score based on the probability of the associated number
         for number in numbers:
             if number in [6, 8]:
@@ -30,12 +33,15 @@ class TryAgent(AgentInterface):
                 number_score -= 1
             elif number in [2, 12]:
                 number_score -= 2
+
         resources = [self.board.terrain[v]['terrain_type'] for v in self.board.nodes[node_id]['contacting_terrain']]
-        resources_score = 0
+        # print(f"terrain_type of neightbors from node_id {node_id}: {resources}")
+
         #here, we check the number and the type of the adjacent resources
         #we discard nodes with only 2 adjacent resources (desert included), so the ones on the sea
+        resource_score = 0
         if len(resources)<3:
-            resources_score -=10
+            resource_score -= 10
         for resource in resources: #to do enum
             if resource == 1: #mineral
                 resource_score += 3
@@ -47,8 +53,20 @@ class TryAgent(AgentInterface):
                 resource_score -= 1
             elif resource == -1: #desert
                 resource_score -= 5 #we discard nodes with the desert adjacent
-        return number_score + resources_score
 
+        return number_score + resource_score
+    
+    def best_node(self, nodes, board_instance):
+        best_node = None
+        best_score = -math.inf 
+
+        for node in nodes: 
+            score = self.evaluate_node(node, board_instance)
+            if score > best_score:
+                best_score = score
+                best_node = node
+                
+        return best_node
 
 
     def on_trade_offer(self, board_instance, incoming_trade_offer=TradeOffer(), player_making_offer=int):
@@ -129,48 +147,53 @@ class TryAgent(AgentInterface):
 
     def on_build_phase(self, board_instance):
         self.board = board_instance
+
         #we keep random choice of playing a development card or not
         if len(self.development_cards_hand.check_hand()) and random.randint(0, 1):
             return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
         #then, priority to development cards
         elif self.hand.resources.has_this_more_materials(BuildConstants.CARD):
             return {'building': BuildConstants.CARD}
+
         #choice of the node for building city/town/road: node evaluation as for game_start
+
         #after that, cities:
-        elif self.hand.resources.has_this_more_materials(BuildConstants.CITY):
+        elif self.hand.resources.has_this_more_materials(BuildConstants.CITY) and len(self.board.valid_city_nodes(self.id)) > 0:
             valid_nodes = self.board.valid_city_nodes(self.id)
-            scores = []
-            for node in valid_nodes:
-                score = super().evaluate_node(self, node, self.board)
-                scores.append((node,score))
-            scores.sort(key=lambda x: x[1], reverse=True)
-            city_node = scores[0][0]
-            return {'building': BuildConstants.CITY, 'node_id': valid_nodes[city_node]}
+            city_node = self.best_node(valid_nodes, self.board)
+
+            return {'building': BuildConstants.CITY, 'node_id': city_node}
+
         #after that, 
         # Pueblo / carretera
         if self.hand.resources.has_this_more_materials(BuildConstants.TOWN):
             answer = random.randint(0, 1)
             # Elegimos aleatoriamente si hacer un pueblo o una carretera
-            if answer:
+            if answer and len(self.board.valid_town_nodes(self.id)) > 0:
                 valid_nodes = self.board.valid_town_nodes(self.id)
-                scores = []
-                for node in valid_nodes:
-                     score = super().evaluate_node(self, node, self.board)
-                     scores.append((node, score))
-                scores.sort(key=lambda x: x[1], reverse=True)
-                town_node = scores[0][0]
-                return {'building': BuildConstants.TOWN, 'node_id': valid_nodes[town_node]}
-            else:
+                town_node = self.best_node(valid_nodes, self.board)
+                return {'building': BuildConstants.TOWN, 'node_id': town_node}
+
+            elif len(self.board.valid_road_nodes(self.id)) > 0:
                 valid_nodes = self.board.valid_road_nodes(self.id)
-                scores = []
-                for node in valid_nodes:
-                     score = super().evaluate_node(self, node, self.board)
-                     scores.append((node, score))
-                scores.sort(key=lambda x: x[1], reverse=True)
-                road_node = scores[0][0]
+                
+                best_start = None
+                best_finish = None
+                best_score = -math.inf
+
+                for v in valid_nodes: 
+                    start, finish = v["starting_node"], v["finishing_node"]
+                    score = self.evaluate_node(finish, self.board)
+                    
+                    if score > best_score:
+                        best_start = start
+                        best_finish = finish
+                        best_score = best_score
+
                 return {'building': BuildConstants.ROAD,
-                            'node_id': valid_nodes[road_node]['starting_node'],
-                            'road_to': valid_nodes[road_node]['finishing_node']}
+                            'node_id': best_start,
+                            'road_to': best_finish}
+
         return None
 
     def on_game_start(self, board_instance):
@@ -180,7 +203,7 @@ class TryAgent(AgentInterface):
         #evaluation of the available nodes:
         scores = []
         for node in free_nodes:
-            score = super().evaluate_node(self, node, self.board)
+            score = self.evaluate_node(node, self.board)
             scores.append((node, score))
         scores.sort(key=lambda x: x[1], reverse=True)
         node_id = scores[0][0]
