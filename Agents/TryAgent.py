@@ -69,6 +69,63 @@ class TryAgent(AgentInterface):
         return best_node
 
 
+    def evaluate_terrain(self, terrain_id, board_instance):
+        #similar to node scoring,
+        #assign a score to a terrain based on the resource and the number
+        #avoiding terrains in which I have a town or city
+        self.board = board_instance
+        number = self.board.terrain[terrain_id]['probability']
+        number_score = 0
+        if number in [6, 8]:
+            number_score += 3
+        elif number in [5, 9]:
+            number_score += 2
+        elif number in [4, 10]:
+            number_score += 1
+        elif number in [3, 11]:
+            number_score -= 1
+        elif number in [2, 12]:
+            number_score -= 2
+        
+        resource = self.board.terrain[terrain_id]['terrain_type']
+        resource_score = 0
+        if resource == 1: #mineral
+            resource_score += 3
+        elif resource == 0: #cereal
+            resource_score += 2
+        elif resource in [3, 2]: #wood or clay
+            resource_score += 1
+        elif resource == 4: #wool
+            resource_score -= 1
+        elif resource == -1: #desert
+            resource_score -= 5
+        
+        im_here = False
+        for node in self.board.terrain[terrain_id]['contacting_nodes']:
+            if self.board.nodes[node]['player'] == self.id:
+                im_here = True
+        if im_here:
+            return -100
+        else:
+            return number_score + resource_score
+        
+    
+    def best_terrain(self, terrains, board_instance):
+        best_terrain = None
+        best_score = -math.inf 
+
+        for terrain in terrains: 
+            score = self.evaluate_terrain(terrain, board_instance)
+            if score > best_score:
+                best_score = score
+                best_terrain = terrain
+                
+        return best_terrain
+
+
+
+
+
     def on_trade_offer(self, board_instance, incoming_trade_offer=TradeOffer(), player_making_offer=int):
         gives = incoming_trade_offer.gives
         receives = incoming_trade_offer.receives
@@ -98,13 +155,23 @@ class TryAgent(AgentInterface):
         return None
 
     def on_having_more_than_7_materials_when_thief_is_called(self):
+        while self.hand.get_total() > 7:
+            while self.hand.resources.wool > 1: #firstly wool, keeping only one of it
+                    self.hand.remove_material(4, 1)
+            for node in range(54):
+                if self.board.nodes[node]['player'] == self.id:
+                    for terrain in self.board.nodes[node]['contacting_terrain']:
+                        if self.board.terrains[terrain]['terrain_type'] != -1:
+                            self.hand.remove_material(self.board.terrains[terrain]['terrain_type'],1)
         return self.hand
 
     def on_moving_thief(self):
-        terrain = random.randint(0, 18)
+        terrains = range(19)
+        terrain = self.best_terrain(terrains, self.board)
         player = -1
+       #choose the player near to that terrain 
         for node in self.board.terrain[terrain]['contacting_nodes']:
-            if self.board.nodes[node]['player'] != -1:
+            if self.board.nodes[node]['player'] != -1 and self.board.nodes[node]['player'] != self.id:
                 player = self.board.nodes[node]['player']
         return {'terrain': terrain, 'player': player}
 
@@ -201,34 +268,29 @@ class TryAgent(AgentInterface):
         free_nodes = board_instance.valid_starting_nodes()
         
         #evaluation of the available nodes:
-        scores = []
-        for node in free_nodes:
-            score = self.evaluate_node(node, self.board)
-            scores.append((node, score))
-        scores.sort(key=lambda x: x[1], reverse=True)
-        node_id = scores[0][0]
-        #random allocation for the node
+        node_id = self.best_node(free_nodes, board_instance)
+        #random allocation for the road
         possible_roads = self.board.nodes[node_id]['adjacent']
         road = possible_roads[random.randint(0, len(possible_roads) - 1)]
         return node_id, road
 
     def on_monopoly_card_use(self):
-        material = random.randint(0, 4)
-        return material
+        return 1
 
     # noinspection DuplicatedCode
     def on_road_building_card_use(self):
         valid_nodes = self.board.valid_road_nodes(self.id)
         if len(valid_nodes) > 1:
-            while True:
-                road_node = random.randint(0, len(valid_nodes) - 1)
-                road_node_2 = random.randint(0, len(valid_nodes) - 1)
-                if road_node != road_node_2:
-                    return {'node_id': valid_nodes[road_node]['starting_node'],
-                            'road_to': valid_nodes[road_node]['finishing_node'],
-                            'node_id_2': valid_nodes[road_node_2]['starting_node'],
-                            'road_to_2': valid_nodes[road_node_2]['finishing_node'],
-                            }
+            scores = []
+            for v in valid_nodes: 
+                start, finish = v["starting_node"], v["finishing_node"]
+                score = self.evaluate_node(finish, self.board)
+                scores.append((start,finish, score))
+            scores.sort(key=lambda x: x[1], reverse = True)
+            return{'node_id':scores[0][0],
+                   'road_to':scores[0][1],
+                   'node_id_2': scores[1][0],
+                   'road_to_2': scores[1][1]}
         elif len(valid_nodes) == 1:
             return {'node_id': valid_nodes[0]['starting_node'],
                     'road_to': valid_nodes[0]['finishing_node'],
@@ -238,5 +300,4 @@ class TryAgent(AgentInterface):
         return None
 
     def on_year_of_plenty_card_use(self):
-        material, material2 = random.randint(0, 4), random.randint(0, 4)
-        return {'material': material, 'material_2': material2}
+        return {'material': 1, 'material_2': 0}
