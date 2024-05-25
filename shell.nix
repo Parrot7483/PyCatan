@@ -5,6 +5,7 @@
                           pkgs.python310Packages.pytest
                           pkgs.bash 
                           pkgs.tree
+                          pkgs.jq
                         ];
 
     shellHook = ''
