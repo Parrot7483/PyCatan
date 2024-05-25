@@ -47,9 +47,40 @@ get_winner() {
     echo "$result"
 }
 
+games="$(jq 'length' $1)"
+echo "Number of games: $games"
+
+wins_j0="0"
+wins_j1="0"
+wins_j2="0"
+wins_j3="0"
+
+echo -n "Winner: "
 # Iterate over each object in the array
-jq -c '.[]' "$1" | while read -r obj; do
+while read -r obj; do
     winner=$(get_winner "$obj")
-    echo "Winner: $winner"
-done
+
+    # Iterate over each player and explicitly increment their count
+    if [[ "$winner" == "J0" ]]; then
+        wins_j0=$(( wins_j0 + 1 ))
+        echo -n "J0 "
+    elif [[ "$winner" == "J1" ]]; then
+        wins_j1=$(( wins_j1 + 1 ))
+        echo -n "J1 "
+    elif [[ "$winner" == "J2" ]]; then
+        wins_j2=$(( wins_j2 + 1 ))
+        echo -n "J2 "
+    elif [[ "$winner" == "J3" ]]; then
+        wins_j3=$(( wins_j3 + 1 ))
+        echo -n "J3 "
+    fi
+done < <(jq -c '.[]' "$1")
+
+echo ""
+echo "Result: "
+echo "J0: $wins_j0 ($(( $wins_j0 * 100 / games ))%)"
+echo "J1: $wins_j1 ($(( $wins_j1 * 100 / games ))%)"
+echo "J2: $wins_j2 ($(( $wins_j2 * 100 / games ))%)"
+echo "J3: $wins_j3 ($(( $wins_j3 * 100 / games ))%)"
+
 
