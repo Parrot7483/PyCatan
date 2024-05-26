@@ -352,7 +352,7 @@ class TryAgent(AgentInterface):
                     return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[i].id)
 
                 # Build Roads if possible
-                if self.development_cards_hand.hand[i].effect == DevelopmentCardConstants.ROAD_BUILDING_EFFECT and
+                if self.development_cards_hand.hand[i].effect == DevelopmentCardConstants.ROAD_BUILDING_EFFECT and \
                          len(self.board.valid_road_nodes(self.id)) >= 2:
                     return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[i].id)
 
