@@ -1,67 +1,69 @@
 import random
 import math
+from functools import cache
 
 from Classes.Constants import MaterialConstants, BuildConstants
 from Classes.Materials import Materials
 from Classes.TradeOffer import TradeOffer
 from Interfaces.AgentInterface import AgentInterface
 
+@cache 
+def evaluate_node(node_id, board_instance):
+    numbers = [board_instance.terrain[v]['probability'] for v in board_instance.nodes[node_id]['contacting_terrain']]
+    # print(f"probability of neightbors from node_id {node_id}: {numbers}")
+    number_score = 0
+
+    #here, for each adjacent terrain, we assign a score based on the probability of the associated number
+    for number in numbers:
+        if number in [6, 8]:
+            number_score += 3
+        elif number in [5, 9]:
+            number_score += 2
+        elif number in [4, 10]:
+            number_score += 1
+        elif number in [3, 11]:
+            number_score -= 1
+        elif number in [2, 12]:
+            number_score -= 2
+
+    resources = [board_instance.terrain[v]['terrain_type'] for v in board_instance.nodes[node_id]['contacting_terrain']]
+    # print(f"terrain_type of neightbors from node_id {node_id}: {resources}")
+
+    #here, we check the number and the type of the adjacent resources
+    #we discard nodes with only 2 adjacent resources (desert included), so the ones on the sea
+    resource_score = 0
+    if len(resources)<3:
+        resource_score -= 10
+    for resource in resources: #to do enum
+        if resource == 1: #mineral
+            resource_score += 3
+        elif resource == 0: #cereal
+            resource_score += 2
+        elif resource in [3, 2]: #wood or clay
+            resource_score += 1
+        elif resource == 4: #wool
+            resource_score -= 1
+        elif resource == -1: #desert
+            resource_score -= 5 #we discard nodes with the desert adjacent
+
+    return number_score + resource_score
 
 class TryAgent(AgentInterface):
     """
     Es necesario poner super().nombre_de_funcion() para asegurarse de que coge la función del padre
     """
     def __init__(self, agent_id):
+        self.town_number = 0
+        self.road_number = 0
         super().__init__(agent_id)
 
-
-    def evaluate_node(self, node_id, board_instance):
-        self.board = board_instance
-        numbers = [self.board.terrain[v]['probability'] for v in self.board.nodes[node_id]['contacting_terrain']]
-        # print(f"probability of neightbors from node_id {node_id}: {numbers}")
-        number_score = 0
-
-        #here, for each adjacent terrain, we assign a score based on the probability of the associated number
-        for number in numbers:
-            if number in [6, 8]:
-                number_score += 3
-            elif number in [5, 9]:
-                number_score += 2
-            elif number in [4, 10]:
-                number_score += 1
-            elif number in [3, 11]:
-                number_score -= 1
-            elif number in [2, 12]:
-                number_score -= 2
-
-        resources = [self.board.terrain[v]['terrain_type'] for v in self.board.nodes[node_id]['contacting_terrain']]
-        # print(f"terrain_type of neightbors from node_id {node_id}: {resources}")
-
-        #here, we check the number and the type of the adjacent resources
-        #we discard nodes with only 2 adjacent resources (desert included), so the ones on the sea
-        resource_score = 0
-        if len(resources)<3:
-            resource_score -= 10
-        for resource in resources: #to do enum
-            if resource == 1: #mineral
-                resource_score += 3
-            elif resource == 0: #cereal
-                resource_score += 2
-            elif resource in [3, 2]: #wood or clay
-                resource_score += 1
-            elif resource == 4: #wool
-                resource_score -= 1
-            elif resource == -1: #desert
-                resource_score -= 5 #we discard nodes with the desert adjacent
-
-        return number_score + resource_score
     
     def best_node(self, nodes, board_instance):
         best_node = None
         best_score = -math.inf 
 
         for node in nodes: 
-            score = self.evaluate_node(node, board_instance)
+            score = evaluate_node(node, board_instance)
             if score > best_score:
                 best_score = score
                 best_node = node
@@ -122,10 +124,6 @@ class TryAgent(AgentInterface):
                 
         return best_terrain
 
-
-
-
-
     def on_trade_offer(self, board_instance, incoming_trade_offer=TradeOffer(), player_making_offer=int):
         gives = incoming_trade_offer.gives
         receives = incoming_trade_offer.receives
@@ -148,21 +146,29 @@ class TryAgent(AgentInterface):
         else:
             return False
 
+    # TODO: Play card
     def on_turn_start(self):
-        # self.development_cards_hand.add_card(DevelopmentCard(99, 0, 0))
-        if len(self.development_cards_hand.check_hand()) and random.randint(0, 1):
-            return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
+        # if len(self.development_cards_hand.check_hand()):
+        #     return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
+
         return None
 
     def on_having_more_than_7_materials_when_thief_is_called(self):
-        while self.hand.get_total() > 7:
-            while self.hand.resources.wool > 1: #firstly wool, keeping only one of it
+        if self.hand.resources.has_this_more_materials(BuildConstants.CITY):
+            while self.hand.get_total() > 7:
+                if self.hand.resources.wool > 0:
                     self.hand.remove_material(4, 1)
-            for node in range(54):
-                if self.board.nodes[node]['player'] == self.id:
-                    for terrain in self.board.nodes[node]['contacting_terrain']:
-                        if self.board.terrains[terrain]['terrain_type'] != -1:
-                            self.hand.remove_material(self.board.terrains[terrain]['terrain_type'],1)
+
+                if self.hand.resources.cereal > 2:
+                    self.hand.remove_material(0, 1)
+                if self.hand.resources.mineral > 3:
+                    self.hand.remove_material(1, 1)
+
+                if self.hand.resources.clay > 0:
+                    self.hand.remove_material(2, 1)
+                if self.hand.resources.wood > 0:
+                    self.hand.remove_material(3, 1)
+        # Si no tiene materiales para hacer una ciudad descarta de manera aleatoria cartas de su mano
         return self.hand
 
     def on_moving_thief(self):
@@ -179,87 +185,205 @@ class TryAgent(AgentInterface):
         if len(self.development_cards_hand.check_hand()) and random.randint(0, 1):
             return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
         return None
+    
+    def total_material(self, material: Materials) -> int:
+        return material.wool + material.wood + material.cereal + material.mineral + material.clay
+    
+    # need: How many resources should be obtained
+    # rest: How many should be kept
+    # We trade a maximum of 2:1 and offer lower value items first
+    def calc_give_offer(self, need, wool=0, wood=0, cereal=0, mineral=0, clay=0) -> Materials:
+        TRADE_FACTOR = 2
+        result = Materials()
+        
+        result.add_wool(max(0, min(need * TRADE_FACTOR, self.hand.resources.wool - wool)))
+        
+        if self.total_material(result) < need * TRADE_FACTOR: 
+            result.add_wood(max(0, min(need * TRADE_FACTOR, self.hand.resources.wood - wood)))
+            
+        if self.total_material(result) < need * TRADE_FACTOR: 
+            result.add_cereal(max(0, min(need * TRADE_FACTOR, self.hand.resources.cereal - cereal)))
 
+        if self.total_material(result) < need * TRADE_FACTOR: 
+            result.add_mineral(max(0, min(need * TRADE_FACTOR, self.hand.resources.mineral - mineral)))
+
+        if self.total_material(result) < need * TRADE_FACTOR: 
+            result.add_clay(max(0, min(need * TRADE_FACTOR, self.hand.resources.clay - clay)))
+            
+        return result
+    
     def on_commerce_phase(self):
-        if len(self.development_cards_hand.check_hand()) and random.randint(0, 1):
-            return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
-
-        answer = random.randint(0, 1)
-        if answer:
-            if self.hand.resources.cereal >= 4:
-                return {'gives': MaterialConstants.CEREAL, 'receives': MaterialConstants.MINERAL}
-            if self.hand.resources.mineral >= 4:
-                return {'gives': MaterialConstants.MINERAL, 'receives': MaterialConstants.CEREAL}
-            if self.hand.resources.clay >= 4:
-                return {'gives': MaterialConstants.CLAY, 'receives': MaterialConstants.CEREAL}
-            if self.hand.resources.wood >= 4:
-                return {'gives': MaterialConstants.WOOD, 'receives': MaterialConstants.CEREAL}
-            if self.hand.resources.wool >= 4:
-                return {'gives': MaterialConstants.WOOL, 'receives': MaterialConstants.CEREAL}
-
+        # We do not trade because we have enough resources to build a city
+        if self.town_number >= 1 and self.hand.resources.has_this_more_materials(BuildConstants.CITY):
+            self.material_given_more_than_three = None
             return None
-        else:
-            gives = Materials(random.randint(0, self.hand.resources.cereal),
-                              random.randint(0, self.hand.resources.mineral),
-                              random.randint(0, self.hand.resources.clay),
-                              random.randint(0, self.hand.resources.wood),
-                              random.randint(0, self.hand.resources.wool))
-            receives = Materials(random.randint(0, self.hand.resources.cereal),
-                                 random.randint(0, self.hand.resources.mineral),
-                                 random.randint(0, self.hand.resources.clay),
-                                 random.randint(0, self.hand.resources.wood),
-                                 random.randint(0, self.hand.resources.wool))
-            trade_offer = TradeOffer(gives, receives)
-            return trade_offer
+        
+        # If we are missing only 1 recources for a city we try to trade
+        if self.town_number >= 1:
+            # One Ore missing
+            if self.hand.resources.mineral == 2 and self.hand.resources.cereal >= 2:
+                gives = self.calc_give_offer(need=1, mineral=3, cereal=2)
+
+                receives = Materials()
+                receives.add_mineral(1) 
+                
+                return TradeOffer(gives, receives)
+            # One Grain missing
+            elif self.hand.resources.mineral >= 3 and self.hand.resources.cereal == 1:
+                gives = self.calc_give_offer(need=1, mineral=3, cereal=2)
+
+                receives = Materials()
+                receives.add_cereal(1) 
+                
+                return TradeOffer(gives, receives)
+            # One Ore and one Grain missing
+            elif self.hand.resources.mineral == 2 and self.hand.resources.cereal == 2:
+                gives = self.calc_give_offer(need=2, mineral=3, cereal=2)
+
+                receives = Materials()
+                receives.add_mineral(1) 
+                receives.add_cereal(1) 
+                
+                return TradeOffer(gives, receives)
+
+        # If we are missing only 1 recources for a settlement we try to trade
+        # Missing wood
+        if self.hand.resources.wood == 0 and self.hand.resources.clay >= 1 and self.hand.resources.wool >= 1 and self.hand.resources.cereal >= 1:
+            gives = self.calc_give_offer(need=1, clay=1, wool=1, cereal=1)
+            receives = Materials()
+            receives.add_wood(1) 
+            return TradeOffer(gives, receives)
+            
+        if self.hand.resources.wood >= 1 and self.hand.resources.clay == 0 and self.hand.resources.wool >= 1 and self.hand.resources.cereal >= 1:
+            gives = self.calc_give_offer(need=1, wood=1, wool=1, cereal=1)
+            receives = Materials()
+            receives.add_clay(1) 
+            return TradeOffer(gives, receives)
+
+        if self.hand.resources.wood >= 1 and self.hand.resources.clay >= 1 and self.hand.resources.wool == 0 and self.hand.resources.cereal >= 1:
+            gives = self.calc_give_offer(need=1, wood=1, clay=1, cereal=1)
+            receives = Materials()
+            receives.add_wool(1) 
+            return TradeOffer(gives, receives)
+
+        if self.hand.resources.wood >= 1 and self.hand.resources.clay >= 1 and self.hand.resources.wool >= 1 and self.hand.resources.cereal == 0:
+            gives = self.calc_give_offer(need=1, wood=1, clay=1, wool=1)
+            receives = Materials()
+            receives.add_cereal(1) 
+            return TradeOffer(gives, receives)
+
+        # If we are missing a recource we try to obtain it using the bank if possible
+        if self.hand.resources.clay == 0:
+            if self.hand.resources.wood > 6:
+                return {'gives': MaterialConstants.WOOD, 'receives': MaterialConstants.CLAY}
+            elif self.hand.resources.wool > 6:
+                return {'gives': MaterialConstants.WOOL, 'receives': MaterialConstants.CLAY}
+            elif self.hand.resources.cereal > 6:
+                return {'gives': MaterialConstants.CEREAL, 'receives': MaterialConstants.CLAY}
+            elif self.hand.resources.mineral > 6:
+                return {'gives': MaterialConstants.MINERAL, 'receives': MaterialConstants.CLAY}
+
+        if self.hand.resources.wood == 0:
+            if self.hand.resources.clay > 6:
+                return {'gives': MaterialConstants.CLAY, 'receives': MaterialConstants.WOOD}
+            elif self.hand.resources.wool > 6:
+                return {'gives': MaterialConstants.WOOL, 'receives': MaterialConstants.WOOD}
+            elif self.hand.resources.cereal > 6:
+                return {'gives': MaterialConstants.CEREAL, 'receives': MaterialConstants.WOOD}
+            elif self.hand.resources.mineral > 6:
+                return {'gives': MaterialConstants.MINERAL, 'receives': MaterialConstants.WOOD}
+
+        if self.hand.resources.wool == 0:
+            if self.hand.resources.clay > 6:
+                return {'gives': MaterialConstants.CLAY, 'receives': MaterialConstants.WOOL}
+            elif self.hand.resources.wood > 6:
+                return {'gives': MaterialConstants.WOOD, 'receives': MaterialConstants.WOOL}
+            elif self.hand.resources.cereal > 6:
+                return {'gives': MaterialConstants.CEREAL, 'receives': MaterialConstants.WOOL}
+            elif self.hand.resources.mineral > 6:
+                return {'gives': MaterialConstants.MINERAL, 'receives': MaterialConstants.WOOL}
+
+        if self.hand.resources.cereal == 0:
+            if self.hand.resources.clay > 6:
+                return {'gives': MaterialConstants.CLAY, 'receives': MaterialConstants.CEREAL}
+            elif self.hand.resources.wood > 6:
+                return {'gives': MaterialConstants.WOOD, 'receives': MaterialConstants.CEREAL}
+            elif self.hand.resources.wool > 6:
+                return {'gives': MaterialConstants.WOOL, 'receives': MaterialConstants.CEREAL}
+            elif self.hand.resources.mineral > 6:
+                return {'gives': MaterialConstants.MINERAL, 'receives': MaterialConstants.CEREAL}
+
+        if self.hand.resources.mineral == 0:
+            if self.hand.resources.clay > 6:
+                return {'gives': MaterialConstants.CLAY, 'receives': MaterialConstants.MINERAL}
+            elif self.hand.resources.wood > 6:
+                return {'gives': MaterialConstants.WOOD, 'receives': MaterialConstants.MINERAL}
+            elif self.hand.resources.wool > 6:
+                return {'gives': MaterialConstants.WOOL, 'receives': MaterialConstants.MINERAL}
+            elif self.hand.resources.cereal > 6:
+                return {'gives': MaterialConstants.CEREAL, 'receives': MaterialConstants.MINERAL}
+
+
+        # Otherwise we try to obtain Brick and Ore by trading
+        
+
+        return None
 
     def on_build_phase(self, board_instance):
         self.board = board_instance
 
-        #we keep random choice of playing a development card or not
-        if len(self.development_cards_hand.check_hand()) and random.randint(0, 1):
-            return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
-        #then, priority to development cards
-        elif self.hand.resources.has_this_more_materials(BuildConstants.CARD):
-            return {'building': BuildConstants.CARD}
+        # TODO: Play Dev Cards
+        # we keep random choice of playing a development card or not
+        # if len(self.development_cards_hand.check_hand()) and random.randint(0, 1):
+        #    return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
+
+        # then, priority to development cards
+        # if self.hand.resources.has_this_more_materials(BuildConstants.CARD):
+        #    return {'building': BuildConstants.CARD}
 
         #choice of the node for building city/town/road: node evaluation as for game_start
 
         #after that, cities:
-        elif self.hand.resources.has_this_more_materials(BuildConstants.CITY) and len(self.board.valid_city_nodes(self.id)) > 0:
+        if self.hand.resources.has_this_more_materials(BuildConstants.CITY) and len(self.board.valid_city_nodes(self.id)) > 0:
             valid_nodes = self.board.valid_city_nodes(self.id)
             city_node = self.best_node(valid_nodes, self.board)
 
+            self.town_number -= 1
             return {'building': BuildConstants.CITY, 'node_id': city_node}
 
-        #after that, 
-        # Pueblo / carretera
+        # Pueblo 
         if self.hand.resources.has_this_more_materials(BuildConstants.TOWN):
-            answer = random.randint(0, 1)
             # Elegimos aleatoriamente si hacer un pueblo o una carretera
-            if answer and len(self.board.valid_town_nodes(self.id)) > 0:
+            if len(self.board.valid_town_nodes(self.id)) > 0:
                 valid_nodes = self.board.valid_town_nodes(self.id)
                 town_node = self.best_node(valid_nodes, self.board)
+
+                self.town_number += 1
                 return {'building': BuildConstants.TOWN, 'node_id': town_node}
+            
+        # carretera
+        if self.hand.resources.has_this_more_materials(BuildConstants.ROAD) \
+        and len(self.board.valid_road_nodes(self.id)) > 0 \
+        and self.road_number <= self.town_number + 4:
+            valid_nodes = self.board.valid_road_nodes(self.id)
+            
+            best_start = None
+            best_finish = None
+            best_score = -math.inf
 
-            elif len(self.board.valid_road_nodes(self.id)) > 0:
-                valid_nodes = self.board.valid_road_nodes(self.id)
+            for v in valid_nodes: 
+                start, finish = v["starting_node"], v["finishing_node"]
+                score = evaluate_node(finish, self.board)
                 
-                best_start = None
-                best_finish = None
-                best_score = -math.inf
+                if score > best_score:
+                    best_start = start
+                    best_finish = finish
+                    best_score = best_score
 
-                for v in valid_nodes: 
-                    start, finish = v["starting_node"], v["finishing_node"]
-                    score = self.evaluate_node(finish, self.board)
-                    
-                    if score > best_score:
-                        best_start = start
-                        best_finish = finish
-                        best_score = best_score
-
-                return {'building': BuildConstants.ROAD,
-                            'node_id': best_start,
-                            'road_to': best_finish}
+            self.road_number += 1
+            return {'building': BuildConstants.ROAD,
+                        'node_id': best_start,
+                        'road_to': best_finish}
 
         return None
 
@@ -284,7 +408,7 @@ class TryAgent(AgentInterface):
             scores = []
             for v in valid_nodes: 
                 start, finish = v["starting_node"], v["finishing_node"]
-                score = self.evaluate_node(finish, self.board)
+                score = evaluate_node(finish, self.board)
                 scores.append((start,finish, score))
             scores.sort(key=lambda x: x[1], reverse = True)
             return{'node_id':scores[0][0],
