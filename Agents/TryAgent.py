@@ -146,10 +146,11 @@ class TryAgent(AgentInterface):
         else:
             return False
 
-    # TODO: Play card
     def on_turn_start(self):
-        # if len(self.development_cards_hand.check_hand()):
-        #     return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
+        for i in range(0, len(self.development_cards_hand.check_hand())):
+            # Play night
+            if self.development_cards_hand.hand[i].type == DevelopmentCardConstants.KNIGHT:
+                return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[i].id)
 
         return None
 
@@ -182,8 +183,11 @@ class TryAgent(AgentInterface):
         return {'terrain': terrain, 'player': player}
 
     def on_turn_end(self):
-        if len(self.development_cards_hand.check_hand()) and random.randint(0, 1):
-            return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
+        for i in range(0, len(self.development_cards_hand.check_hand())):
+            # Play Victory Card
+            if self.development_cards_hand.hand[i].type == DevelopmentCardConstants.VICTORY_POINT:
+                return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[i].id)
+
         return None
     
     def total_material(self, material: Materials) -> int:
@@ -213,9 +217,13 @@ class TryAgent(AgentInterface):
         return result
     
     def on_commerce_phase(self):
+        # Always Play Monopoly Card
+        for i in range(0, len(self.development_cards_hand.check_hand())):
+            if self.development_cards_hand.hand[i].effect == DevelopmentCardConstants.MONOPOLY_EFFECT:
+                return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[i].id)
+
         # We do not trade because we have enough resources to build a city
         if self.town_number >= 1 and self.hand.resources.has_this_more_materials(BuildConstants.CITY):
-            self.material_given_more_than_three = None
             return None
         
         # If we are missing only 1 recources for a city we try to trade
@@ -323,33 +331,30 @@ class TryAgent(AgentInterface):
             elif self.hand.resources.cereal > 6:
                 return {'gives': MaterialConstants.CEREAL, 'receives': MaterialConstants.MINERAL}
 
-
-        # Otherwise we try to obtain Brick and Ore by trading
-        
-
         return None
 
     def on_build_phase(self, board_instance):
         self.board = board_instance
 
-        # TODO: Play Dev Cards
-        # we keep random choice of playing a development card or not
-        # if len(self.development_cards_hand.check_hand()) and random.randint(0, 1):
-        #    return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[0].id)
-
-        # then, priority to development cards
-        # if self.hand.resources.has_this_more_materials(BuildConstants.CARD):
-        #    return {'building': BuildConstants.CARD}
-
-        #choice of the node for building city/town/road: node evaluation as for game_start
-
-        #after that, cities:
+        # Cities:
         if self.hand.resources.has_this_more_materials(BuildConstants.CITY) and len(self.board.valid_city_nodes(self.id)) > 0:
             valid_nodes = self.board.valid_city_nodes(self.id)
             city_node = self.best_node(valid_nodes, self.board)
 
             self.town_number -= 1
             return {'building': BuildConstants.CITY, 'node_id': city_node}
+
+        # Play development card
+        if len(self.development_cards_hand.check_hand()):
+            for i in range(0, len(self.development_cards_hand.check_hand())):
+                # Play Year of the Plenty
+                if self.development_cards_hand.hand[i].effect == DevelopmentCardConstants.YEAR_OF_PLENTY_EFFECT:
+                    return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[i].id)
+
+                # Build Roads if possible
+                if self.development_cards_hand.hand[i].effect == DevelopmentCardConstants.ROAD_BUILDING_EFFECT and
+                         len(self.board.valid_road_nodes(self.id)) >= 2:
+                    return self.development_cards_hand.select_card_by_id(self.development_cards_hand.hand[i].id)
 
         # Pueblo 
         if self.hand.resources.has_this_more_materials(BuildConstants.TOWN):
@@ -399,7 +404,7 @@ class TryAgent(AgentInterface):
         return node_id, road
 
     def on_monopoly_card_use(self):
-        return 1
+        return 4
 
     # noinspection DuplicatedCode
     def on_road_building_card_use(self):
