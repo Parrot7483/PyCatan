@@ -1,6 +1,5 @@
 from Managers.GameDirector import GameDirector
 
-
 def main():
     game_director = GameDirector()
     try:
@@ -17,7 +16,6 @@ def main():
     print('------------------------')
     game_director.trace_loader.export_every_game_to_file()
     return
-
 
 if __name__ == '__main__':
     main()
